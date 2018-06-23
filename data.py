@@ -4,6 +4,9 @@ Licensed under the CC BY-NC-SA 4.0 license (https://creativecommons.org/licenses
 """
 import torch.utils.data as data
 import os.path
+from logging import getLogger
+
+logger = getLogger()
 
 def default_loader(path):
     return Image.open(path).convert('RGB')
@@ -101,7 +104,7 @@ def make_dataset(dir):
 class ImageFolder(data.Dataset):
 
     def __init__(self, root, transform=None, return_paths=False,
-                 loader=default_loader):
+                 loader=default_loader, mode='train'):
         imgs = sorted(make_dataset(root))
         if len(imgs) == 0:
             raise(RuntimeError("Found 0 images in: " + root + "\n"
@@ -113,10 +116,26 @@ class ImageFolder(data.Dataset):
         self.transform = transform
         self.return_paths = return_paths
         self.loader = loader
+        self.mode = mode
+
+        num_train_set = int(0.9 * len(imgs))
+        self.train_imgs = imgs[:num_train_set]
+        self.test_imgs = imgs[num_train_set:]
+
+        if self.mode == 'train':
+            self.num_data = len(self.train_imgs)
+        elif self.mode == 'test':
+            self.num_data = len(self.test_imgs)
 
     def __getitem__(self, index):
-        path = self.imgs[index]
+
+        path = ''
+        if self.mode == 'train':
+            path = self.train_imgs[index]
+        elif self.mode == 'test':
+            path = self.test_imgs[index]
         img = self.loader(path)
+
         if self.transform is not None:
             img = self.transform(img)
         if self.return_paths:
@@ -125,4 +144,4 @@ class ImageFolder(data.Dataset):
             return img
 
     def __len__(self):
-        return len(self.imgs)
+        return self.num_data

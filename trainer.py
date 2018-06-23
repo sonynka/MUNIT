@@ -9,10 +9,15 @@ import torch
 import torch.nn as nn
 import os
 
+from logging import getLogger
+
+logger = getLogger()
+
 class MUNIT_Trainer(nn.Module):
     def __init__(self, hyperparameters, opts):
         super(MUNIT_Trainer, self).__init__()
         lr = hyperparameters['lr']
+
         # Initiate the networks
         self.gen_a = AdaINGen(hyperparameters['input_dim_a'], hyperparameters['gen'])  # auto-encoder for domain a
         self.gen_b = AdaINGen(hyperparameters['input_dim_b'], hyperparameters['gen'])  # auto-encoder for domain b
@@ -54,10 +59,8 @@ class MUNIT_Trainer(nn.Module):
 
     def forward(self, x_a, x_b):
         self.eval()
-        x_a.volatile = True
-        x_b.volatile = True
-        s_a = Variable(self.s_a, volatile=True)
-        s_b = Variable(self.s_b, volatile=True)
+        s_a = Variable(self.s_a)
+        s_b = Variable(self.s_b)
         c_a, s_a_fake = self.gen_a.encode(x_a)
         c_b, s_b_fake = self.gen_b.encode(x_b)
         x_ba = self.gen_a.decode(c_b, s_a)
@@ -125,12 +128,10 @@ class MUNIT_Trainer(nn.Module):
 
     def sample(self, x_a, x_b):
         self.eval()
-        x_a.volatile = True
-        x_b.volatile = True
-        s_a1 = Variable(self.s_a, volatile=True)
-        s_b1 = Variable(self.s_b, volatile=True)
-        s_a2 = Variable(torch.randn(x_a.size(0), self.style_dim, 1, 1).cuda(), volatile=True)
-        s_b2 = Variable(torch.randn(x_b.size(0), self.style_dim, 1, 1).cuda(), volatile=True)
+        s_a1 = Variable(self.s_a)
+        s_b1 = Variable(self.s_b)
+        s_a2 = Variable(torch.randn(x_a.size(0), self.style_dim, 1, 1).cuda())
+        s_b2 = Variable(torch.randn(x_b.size(0), self.style_dim, 1, 1).cuda())
         x_a_recon, x_b_recon, x_ba1, x_ba2, x_ab1, x_ab2 = [], [], [], [], [], []
         for i in range(x_a.size(0)):
             c_a, s_a_fake = self.gen_a.encode(x_a[i].unsqueeze(0))
@@ -189,7 +190,7 @@ class MUNIT_Trainer(nn.Module):
         # Reinitilize schedulers
         self.dis_scheduler = get_scheduler(self.dis_opt, hyperparameters, iterations)
         self.gen_scheduler = get_scheduler(self.gen_opt, hyperparameters, iterations)
-        print('Resume from iteration %d' % iterations)
+        logger.info('Resume from iteration %d' % iterations)
         return iterations
 
     def save(self, snapshot_dir, iterations):
@@ -200,3 +201,5 @@ class MUNIT_Trainer(nn.Module):
         torch.save({'a': self.gen_a.state_dict(), 'b': self.gen_b.state_dict()}, gen_name)
         torch.save({'a': self.dis_a.state_dict(), 'b': self.dis_b.state_dict()}, dis_name)
         torch.save({'gen': self.gen_opt.state_dict(), 'dis': self.dis_opt.state_dict()}, opt_name)
+
+        logger.info('Saving snapshots to: {}'.format(snapshot_dir))

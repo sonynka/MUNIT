@@ -47,11 +47,11 @@ def main(argv):
     decode = trainer.gen_b.decode if opts.a2b else trainer.gen_a.decode # decode function
 
     # Start testing
-    style_fixed = Variable(torch.randn(opts.num_style, style_dim, 1, 1).cuda(), volatile=True)
+    style_fixed = Variable(torch.randn(opts.num_style, style_dim, 1, 1).cuda())
     for i, images in enumerate(data_loader):
-        images = Variable(images.cuda(), volatile=True)
+        images = Variable(images.cuda())
         content, _ = encode(images)
-        style = style_fixed if opts.synchronized else Variable(torch.randn(opts.num_style, style_dim, 1, 1).cuda(), volatile=True)
+        style = style_fixed if opts.synchronized else Variable(torch.randn(opts.num_style, style_dim, 1, 1).cuda())
         for j in range(opts.num_style):
             s = style[j].unsqueeze(0)
             outputs = decode(content, s)
