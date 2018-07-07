@@ -51,9 +51,9 @@ num_workers: 8                              # number of data loading threads
 new_size: 128                               # first resize the shortest image side to this size
 crop_image_height: 128                      # random crop image of this height
 crop_image_width: 128                       # random crop image of this width
-data_root: ../data/                      # dataset folder location
-dataA: fashion/dresses                      # dataset train/test A
-dataB: kleider_filtered                     # dataset train/test B
+data_root: ../data/fashion                  # dataset folder location
+data_list_a: inputs/floral.txt
+data_list_b: inputs/not_floral.txt
 
 # outputs
-output_root: outputs/fashion/
+output_root: outputs/fashion_floral/

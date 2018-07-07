@@ -27,14 +27,28 @@ def default_flist_reader(flist):
 
 class ImageFilelist(data.Dataset):
     def __init__(self, root, flist, transform=None,
-                 flist_reader=default_flist_reader, loader=default_loader):
+                 flist_reader=default_flist_reader, loader=default_loader, mode='train'):
         self.root = root
         self.imlist = flist_reader(flist)
         self.transform = transform
         self.loader = loader
+        self.mode = mode
+
+        num_train_set = int(0.9 * len(self.imlist))
+        self.train_imgs = self.imlist[:num_train_set]
+        self.test_imgs = self.imlist[num_train_set:]
+
+        if self.mode == 'train':
+            self.num_data = len(self.train_imgs)
+        elif self.mode == 'test':
+            self.num_data = len(self.test_imgs)
 
     def __getitem__(self, index):
-        impath = self.imlist[index]
+
+        if self.mode == 'train':
+            impath = self.train_imgs[index]
+        elif self.mode == 'test':
+            impath = self.test_imgs[index]
         img = self.loader(os.path.join(self.root, impath))
         if self.transform is not None:
             img = self.transform(img)
@@ -42,7 +56,7 @@ class ImageFilelist(data.Dataset):
         return img
 
     def __len__(self):
-        return len(self.imlist)
+        return self.num_data
 
 
 class ImageLabelFilelist(data.Dataset):

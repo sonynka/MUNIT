@@ -24,6 +24,7 @@ parser = OptionParser()
 parser.add_option('--config', type=str, help="net configuration")
 parser.add_option('--output_base', type=str, default='.', help="outputs path")
 parser.add_option("--resume", action="store_true")
+parser.add_option("--model_path", type=str)
 
 
 def main(argv):
@@ -58,7 +59,7 @@ def main(argv):
 
 
     # Start training
-    iterations = trainer.resume(output_subfolders['models'], hyperparameters=config) if opts.resume else 0
+    iterations = trainer.resume(opts.model_path, hyperparameters=config) if opts.resume else 0
 
 
     while True:

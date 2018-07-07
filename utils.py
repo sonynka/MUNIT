@@ -17,6 +17,7 @@ import yaml
 import numpy as np
 import torch.nn.init as init
 from logging import getLogger
+import pandas as pd
 # Methods
 # get_all_data_loaders      : primary data loader interface (load trainA, testA, trainB, testB)
 # get_data_loader_list      : list-based data loader
@@ -48,36 +49,48 @@ def get_all_data_loaders(conf):
         new_size_b = conf['new_size_b']
     height = conf['crop_image_height']
     width = conf['crop_image_width']
-    crop = False
+    crop = True
 
-    if 'data_root' in conf:
-        train_loader_a = get_data_loader_folder(os.path.join(conf['data_root'],  conf['dataA']), batch_size, True,
+    # if 'attr' in conf:
+    #     attrs = pd.read_csv(os.path.join(conf['data_root'], 'img_attr.csv'))
+    #     filesA = attrs.loc[attrs[conf['attr']] == 1, 'img_path'].to_list()
+    #     filesB = attrs.loc[attrs[conf['attr']] == 0, 'img_path'].sample(len(filesA)).to_list()
+    #     train_loader_a = get_data_loader_list(conf['data_root'], )
+
+
+    if 'data_list_a' in conf:
+        train_loader_a = get_data_loader_list(conf['data_root'], conf['data_list_a'], batch_size, True,
                                               new_size_a, height, width, num_workers, crop, mode='train')
-        test_loader_a = get_data_loader_folder(os.path.join(conf['data_root'], conf['dataA']), batch_size, False,
+        test_loader_a = get_data_loader_list(conf['data_root'], conf['data_list_a'], batch_size, False,
                                              new_size_a, new_size_a, new_size_a, num_workers, crop, mode='test')
-        train_loader_b = get_data_loader_folder(os.path.join(conf['data_root'], conf['dataB']), batch_size, True,
+        train_loader_b = get_data_loader_list(conf['data_root'], conf['data_list_b'], batch_size, True,
                                               new_size_b, height, width, num_workers, crop, mode='train')
-        test_loader_b = get_data_loader_folder(os.path.join(conf['data_root'],  conf['dataB']), batch_size, False,
+        test_loader_b = get_data_loader_list(conf['data_root'], conf['data_list_b'], batch_size, False,
                                              new_size_b, new_size_b, new_size_b, num_workers, crop, mode='test')
+
+        logger.info('{}: {} / {} images with for train / test sets'.format(
+            conf['data_list_a'], len(train_loader_a.dataset), len(test_loader_a.dataset)))
+        logger.info('{}: {} / {} images with for train / test sets'.format(
+            conf['data_list_b'], len(train_loader_b.dataset), len(test_loader_b.dataset)))
+    else:
+        train_loader_a = get_data_loader_folder(os.path.join(conf['data_root'], conf['dataA']), batch_size, True,
+                                                new_size_a, height, width, num_workers, crop, mode='train')
+        test_loader_a = get_data_loader_folder(os.path.join(conf['data_root'], conf['dataA']), batch_size, False,
+                                               new_size_a, new_size_a, new_size_a, num_workers, crop, mode='test')
+        train_loader_b = get_data_loader_folder(os.path.join(conf['data_root'], conf['dataB']), batch_size, True,
+                                                new_size_b, height, width, num_workers, crop, mode='train')
+        test_loader_b = get_data_loader_folder(os.path.join(conf['data_root'], conf['dataB']), batch_size, False,
+                                               new_size_b, new_size_b, new_size_b, num_workers, crop, mode='test')
 
         logger.info('{}: {} / {} images with for train / test sets'.format(
             conf['dataA'], len(train_loader_a.dataset), len(test_loader_a.dataset)))
         logger.info('{}: {} / {} images with for train / test sets'.format(
             conf['dataB'], len(train_loader_b.dataset), len(test_loader_b.dataset)))
-    else:
-        train_loader_a = get_data_loader_list(conf['data_folder_train_a'], conf['data_list_train_a'], batch_size, True,
-                                                new_size_a, height, width, num_workers, crop)
-        test_loader_a = get_data_loader_list(conf['data_folder_test_a'], conf['data_list_test_a'], batch_size, False,
-                                                new_size_a, new_size_a, new_size_a, num_workers, crop )
-        train_loader_b = get_data_loader_list(conf['data_folder_train_b'], conf['data_list_train_b'], batch_size, True,
-                                                new_size_b, height, width, num_workers, crop)
-        test_loader_b = get_data_loader_list(conf['data_folder_test_b'], conf['data_list_test_b'], batch_size, False,
-                                                new_size_b, new_size_b, new_size_b, num_workers, crop)
     return train_loader_a, train_loader_b, test_loader_a, test_loader_b
 
 
 def get_data_loader_list(root, file_list, batch_size, train, new_size=256,
-                           height=256, width=256, num_workers=4, crop=True):
+                           height=256, width=256, num_workers=4, crop=True, mode='train'):
     transform_list = [transforms.ToTensor(),
                       transforms.Normalize((0.5, 0.5, 0.5),
                                            (0.5, 0.5, 0.5))]
@@ -85,7 +98,7 @@ def get_data_loader_list(root, file_list, batch_size, train, new_size=256,
                       transforms.RandomCrop((height, width))] + transform_list if crop else transform_list
     transform_list = [transforms.RandomHorizontalFlip()] + transform_list if train else transform_list
     transform = transforms.Compose(transform_list)
-    dataset = ImageFilelist(root, file_list, transform=transform)
+    dataset = ImageFilelist(root, file_list, transform=transform, mode=mode)
     loader = DataLoader(dataset=dataset, batch_size=batch_size, shuffle=train, drop_last=True, num_workers=num_workers)
     return loader
 
@@ -265,18 +278,18 @@ def weights_init(init_type='gaussian'):
         if (classname.find('Conv') == 0 or classname.find('Linear') == 0) and hasattr(m, 'weight'):
             # print m.__class__.__name__
             if init_type == 'gaussian':
-                init.normal(m.weight.data, 0.0, 0.02)
+                init.normal_(m.weight.data, 0.0, 0.02)
             elif init_type == 'xavier':
-                init.xavier_normal(m.weight.data, gain=math.sqrt(2))
+                init.xavier_normal_(m.weight.data, gain=math.sqrt(2))
             elif init_type == 'kaiming':
-                init.kaiming_normal(m.weight.data, a=0, mode='fan_in')
+                init.kaiming_normal_(m.weight.data, a=0, mode='fan_in')
             elif init_type == 'orthogonal':
-                init.orthogonal(m.weight.data, gain=math.sqrt(2))
+                init.orthogonal_(m.weight.data, gain=math.sqrt(2))
             elif init_type == 'default':
                 pass
             else:
                 assert 0, "Unsupported initialization: {}".format(init_type)
             if hasattr(m, 'bias') and m.bias is not None:
-                init.constant(m.bias.data, 0.0)
+                init.constant_(m.bias.data, 0.0)
 
     return init_fun
