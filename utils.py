@@ -8,7 +8,7 @@ from networks import Vgg16
 from torch.autograd import Variable
 from torch.optim import lr_scheduler
 from torchvision import transforms
-from data import ImageFilelist, ImageFolder
+from data import ImageFilelist, ImageFolder, UnalignedDataset
 import torch
 import os
 import math
@@ -40,66 +40,41 @@ import pandas as pd
 logger = getLogger()
 
 def get_all_data_loaders(conf):
-    batch_size = conf['batch_size']
-    num_workers = conf['num_workers']
-    if 'new_size' in conf:
-        new_size_a = new_size_b = conf['new_size']
-    else:
-        new_size_a = conf['new_size_a']
-        new_size_b = conf['new_size_b']
-    height = conf['crop_image_height']
-    width = conf['crop_image_width']
-    crop = True
 
-    # if 'attr' in conf:
-    #     attrs = pd.read_csv(os.path.join(conf['data_root'], 'img_attr.csv'))
-    #     filesA = attrs.loc[attrs[conf['attr']] == 1, 'img_path'].to_list()
-    #     filesB = attrs.loc[attrs[conf['attr']] == 0, 'img_path'].sample(len(filesA)).to_list()
-    #     train_loader_a = get_data_loader_list(conf['data_root'], )
+    loaders = {mode: get_data_loader_list(conf, mode) for mode in ['train', 'val', 'test']}
 
+    # else:
+    #     train_loader_a = get_data_loader_folder(conf, mode='train')
+    #     test_loader_a = get_data_loader_folder(conf, mode='test')
+    #     train_loader_b = get_data_loader_folder(conf, mode='train')
+    #     test_loader_b = get_data_loader_folder(conf, mode='test')
+    #
+    #     logger.info('{}: {} / {} images with for train / test sets'.format(
+    #         conf['dataA'], len(train_loader_a.dataset), len(test_loader_a.dataset)))
+    #     logger.info('{}: {} / {} images with for train / test sets'.format(
+    #         conf['dataB'], len(train_loader_b.dataset), len(test_loader_b.dataset)))
 
-    if 'data_list_a' in conf:
-        train_loader_a = get_data_loader_list(conf['data_root'], conf['data_list_a'], batch_size, True,
-                                              new_size_a, height, width, num_workers, crop, mode='train')
-        test_loader_a = get_data_loader_list(conf['data_root'], conf['data_list_a'], batch_size, False,
-                                             new_size_a, new_size_a, new_size_a, num_workers, crop, mode='test')
-        train_loader_b = get_data_loader_list(conf['data_root'], conf['data_list_b'], batch_size, True,
-                                              new_size_b, height, width, num_workers, crop, mode='train')
-        test_loader_b = get_data_loader_list(conf['data_root'], conf['data_list_b'], batch_size, False,
-                                             new_size_b, new_size_b, new_size_b, num_workers, crop, mode='test')
-
-        logger.info('{}: {} / {} images with for train / test sets'.format(
-            conf['data_list_a'], len(train_loader_a.dataset), len(test_loader_a.dataset)))
-        logger.info('{}: {} / {} images with for train / test sets'.format(
-            conf['data_list_b'], len(train_loader_b.dataset), len(test_loader_b.dataset)))
-    else:
-        train_loader_a = get_data_loader_folder(os.path.join(conf['data_root'], conf['dataA']), batch_size, True,
-                                                new_size_a, height, width, num_workers, crop, mode='train')
-        test_loader_a = get_data_loader_folder(os.path.join(conf['data_root'], conf['dataA']), batch_size, False,
-                                               new_size_a, new_size_a, new_size_a, num_workers, crop, mode='test')
-        train_loader_b = get_data_loader_folder(os.path.join(conf['data_root'], conf['dataB']), batch_size, True,
-                                                new_size_b, height, width, num_workers, crop, mode='train')
-        test_loader_b = get_data_loader_folder(os.path.join(conf['data_root'], conf['dataB']), batch_size, False,
-                                               new_size_b, new_size_b, new_size_b, num_workers, crop, mode='test')
-
-        logger.info('{}: {} / {} images with for train / test sets'.format(
-            conf['dataA'], len(train_loader_a.dataset), len(test_loader_a.dataset)))
-        logger.info('{}: {} / {} images with for train / test sets'.format(
-            conf['dataB'], len(train_loader_b.dataset), len(test_loader_b.dataset)))
-    return train_loader_a, train_loader_b, test_loader_a, test_loader_b
+    return loaders
 
 
-def get_data_loader_list(root, file_list, batch_size, train, new_size=256,
-                           height=256, width=256, num_workers=4, crop=True, mode='train'):
-    transform_list = [transforms.ToTensor(),
+def get_data_loader_list(conf, mode='train'):
+
+    transform_list = [transforms.Resize(conf['new_size']),
+                      transforms.ToTensor(),
                       transforms.Normalize((0.5, 0.5, 0.5),
                                            (0.5, 0.5, 0.5))]
-    transform_list = [transforms.Resize(new_size),
-                      transforms.RandomCrop((height, width))] + transform_list if crop else transform_list
-    transform_list = [transforms.RandomHorizontalFlip()] + transform_list if train else transform_list
     transform = transforms.Compose(transform_list)
-    dataset = ImageFilelist(root, file_list, transform=transform, mode=mode)
-    loader = DataLoader(dataset=dataset, batch_size=batch_size, shuffle=train, drop_last=True, num_workers=num_workers)
+    dataset = UnalignedDataset(conf['data_root'],
+                               os.path.join(conf['data_list'], mode + '_imgs.csv'),
+                               os.path.join(conf['data_root'], 'img_attr.csv'),
+                               conf['attrA'],
+                               conf['attrB'] if 'attrB' in conf else None,
+                               conf['categories'] if 'categories' in conf else None,
+                               transform=transform)
+    loader = DataLoader(dataset=dataset,
+                        batch_size=conf['display_size'] if mode == 'val' else conf['batch_size'],
+                        shuffle=False if mode == 'test' else True,
+                        drop_last=True, num_workers=conf['num_workers'])
     return loader
 
 def get_data_loader_folder(input_folder, batch_size, train, new_size=256,
@@ -128,18 +103,19 @@ def eformat(f, prec):
 
 
 def write_images(image_outputs, display_image_num, file_name):
-    image_outputs = [images.expand(-1, 3, -1, -1) for images in image_outputs] # expand gray-scale images to 3 channels
-    image_tensor = torch.cat([images[:display_image_num] for images in image_outputs], 0)
+    image_tensor = torch.cat(torch.unbind(image_outputs, 0), dim=2)
     image_grid = vutils.make_grid(image_tensor.data, nrow=display_image_num, padding=0, normalize=True)
     vutils.save_image(image_grid, file_name, nrow=1)
 
+    return image_grid
 
-def prepare_logging_folders(output_directory):
+
+def prepare_logging_folders(output_directory, experiment_name):
     log_subfolders = ['logs', 'models', 'images']
     log_subpaths = {}
 
     for log_subfolder in log_subfolders:
-        sub_path = os.path.join(output_directory, log_subfolder)
+        sub_path = os.path.join(output_directory, log_subfolder, experiment_name)
         log_subpaths[log_subfolder] = sub_path
         if not os.path.exists(sub_path):
             os.makedirs(sub_path)

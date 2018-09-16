@@ -26,6 +26,8 @@ class MUNIT_Trainer(nn.Module):
         self.instancenorm = nn.InstanceNorm2d(512, affine=False)
         self.style_dim = hyperparameters['gen']['style_dim']
 
+        self.loss = {}
+
         # fix the noise used in sampling
         self.s_a = torch.randn(8, self.style_dim, 1, 1).cuda()
         self.s_b = torch.randn(8, self.style_dim, 1, 1).cuda()
@@ -53,6 +55,14 @@ class MUNIT_Trainer(nn.Module):
             self.vgg.eval()
             for param in self.vgg.parameters():
                 param.requires_grad = False
+
+    def print_network(self, model, name):
+        num_params = 0
+        for p in model.parameters():
+            num_params += p.numel()
+            logger.info(
+                '{} - {} - Number of parameters: {}'.format(name, model,
+                                                        num_params))
 
     def recon_criterion(self, input, target):
         return torch.mean(torch.abs(input - target))
@@ -89,34 +99,37 @@ class MUNIT_Trainer(nn.Module):
         x_bab = self.gen_b.decode(c_b_recon, s_b_prime) if hyperparameters['recon_x_cyc_w'] > 0 else None
 
         # reconstruction loss
-        self.loss_gen_recon_x_a = self.recon_criterion(x_a_recon, x_a)
-        self.loss_gen_recon_x_b = self.recon_criterion(x_b_recon, x_b)
-        self.loss_gen_recon_s_a = self.recon_criterion(s_a_recon, s_a)
-        self.loss_gen_recon_s_b = self.recon_criterion(s_b_recon, s_b)
-        self.loss_gen_recon_c_a = self.recon_criterion(c_a_recon, c_a)
-        self.loss_gen_recon_c_b = self.recon_criterion(c_b_recon, c_b)
-        self.loss_gen_cycrecon_x_a = self.recon_criterion(x_aba, x_a) if hyperparameters['recon_x_cyc_w'] > 0 else 0
-        self.loss_gen_cycrecon_x_b = self.recon_criterion(x_bab, x_b) if hyperparameters['recon_x_cyc_w'] > 0 else 0
+        self.loss['G/rec_x_A'] = self.recon_criterion(x_a_recon, x_a)
+        self.loss['G/rec_x_B'] = self.recon_criterion(x_b_recon, x_b)
+        self.loss['G/rec_s_A'] = self.recon_criterion(s_a_recon, s_a)
+        self.loss['G/rec_s_B'] = self.recon_criterion(s_b_recon, s_b)
+        self.loss['G/rec_c_A'] = self.recon_criterion(c_a_recon, c_a)
+        self.loss['G/rec_c_B'] = self.recon_criterion(c_b_recon, c_b)
+        self.loss['G/cycrec_x_A'] = self.recon_criterion(x_aba, x_a) if hyperparameters['recon_x_cyc_w'] > 0 else 0
+        self.loss['G/cycrec_x_B'] = self.recon_criterion(x_bab, x_b) if hyperparameters['recon_x_cyc_w'] > 0 else 0
+
         # GAN loss
-        self.loss_gen_adv_a = self.dis_a.calc_gen_loss(x_ba)
-        self.loss_gen_adv_b = self.dis_b.calc_gen_loss(x_ab)
+        self.loss['G/adv_A'] = self.dis_a.calc_gen_loss(x_ba)
+        self.loss['G/adv_B'] = self.dis_b.calc_gen_loss(x_ab)
+
         # domain-invariant perceptual loss
-        self.loss_gen_vgg_a = self.compute_vgg_loss(self.vgg, x_ba, x_b) if hyperparameters['vgg_w'] > 0 else 0
-        self.loss_gen_vgg_b = self.compute_vgg_loss(self.vgg, x_ab, x_a) if hyperparameters['vgg_w'] > 0 else 0
+        self.loss['G/vgg_A'] = self.compute_vgg_loss(self.vgg, x_ba.cuda(), x_b.cuda()) if hyperparameters['vgg_w'] > 0 else 0
+        self.loss['G/vgg_B'] = self.compute_vgg_loss(self.vgg, x_ab, x_a) if hyperparameters['vgg_w'] > 0 else 0
+
         # total loss
-        self.loss_gen_total = hyperparameters['gan_w'] * self.loss_gen_adv_a + \
-                              hyperparameters['gan_w'] * self.loss_gen_adv_b + \
-                              hyperparameters['recon_x_w'] * self.loss_gen_recon_x_a + \
-                              hyperparameters['recon_s_w'] * self.loss_gen_recon_s_a + \
-                              hyperparameters['recon_c_w'] * self.loss_gen_recon_c_a + \
-                              hyperparameters['recon_x_w'] * self.loss_gen_recon_x_b + \
-                              hyperparameters['recon_s_w'] * self.loss_gen_recon_s_b + \
-                              hyperparameters['recon_c_w'] * self.loss_gen_recon_c_b + \
-                              hyperparameters['recon_x_cyc_w'] * self.loss_gen_cycrecon_x_a + \
-                              hyperparameters['recon_x_cyc_w'] * self.loss_gen_cycrecon_x_b + \
-                              hyperparameters['vgg_w'] * self.loss_gen_vgg_a + \
-                              hyperparameters['vgg_w'] * self.loss_gen_vgg_b
-        self.loss_gen_total.backward()
+        self.loss['G/total'] = hyperparameters['gan_w'] * self.loss['G/adv_A'] + \
+                              hyperparameters['gan_w'] * self.loss['G/adv_B'] + \
+                              hyperparameters['recon_x_w'] * self.loss['G/rec_x_A'] + \
+                              hyperparameters['recon_s_w'] * self.loss['G/rec_s_A'] + \
+                              hyperparameters['recon_c_w'] * self.loss['G/rec_c_A'] + \
+                              hyperparameters['recon_x_w'] * self.loss['G/rec_x_B'] + \
+                              hyperparameters['recon_s_w'] * self.loss['G/rec_s_B'] + \
+                              hyperparameters['recon_c_w'] * self.loss['G/rec_c_B'] + \
+                              hyperparameters['recon_x_cyc_w'] * self.loss['G/cycrec_x_A'] + \
+                              hyperparameters['recon_x_cyc_w'] * self.loss['G/cycrec_x_B'] + \
+                              hyperparameters['vgg_w'] * self.loss['G/vgg_A'] + \
+                              hyperparameters['vgg_w'] * self.loss['G/vgg_B']
+        self.loss['G/total'].backward()
         self.gen_opt.step()
 
     def compute_vgg_loss(self, vgg, img, target):
@@ -139,14 +152,25 @@ class MUNIT_Trainer(nn.Module):
             x_a_recon.append(self.gen_a.decode(c_a, s_a_fake))
             x_b_recon.append(self.gen_b.decode(c_b, s_b_fake))
             x_ba1.append(self.gen_a.decode(c_b, s_a1[i].unsqueeze(0)))
-            x_ba2.append(self.gen_a.decode(c_b, s_a2[i].unsqueeze(0)))
+            x_ba2.append(self.gen_a.decode(c_b, s_a_fake.unsqueeze(0)))
             x_ab1.append(self.gen_b.decode(c_a, s_b1[i].unsqueeze(0)))
-            x_ab2.append(self.gen_b.decode(c_a, s_b2[i].unsqueeze(0)))
-        x_a_recon, x_b_recon = torch.cat(x_a_recon), torch.cat(x_b_recon)
-        x_ba1, x_ba2 = torch.cat(x_ba1), torch.cat(x_ba2)
-        x_ab1, x_ab2 = torch.cat(x_ab1), torch.cat(x_ab2)
+            x_ab2.append(self.gen_b.decode(c_a, s_b_fake.unsqueeze(0)))
+
+        outputs = {}
+        outputs['A/real'] = x_a
+        outputs['B/real'] = x_b
+
+        outputs['A/rec'] = torch.cat(x_a_recon)
+        outputs['B/rec'] = torch.cat(x_b_recon)
+
+        outputs['A/B_random_style'] = torch.cat(x_ab1)
+        outputs['A/B'] = torch.cat(x_ab2)
+        outputs['B/A_random_style'] = torch.cat(x_ba1)
+        outputs['B/A'] = torch.cat(x_ba2)
+
         self.train()
-        return x_a, x_a_recon, x_ab1, x_ab2, x_b, x_b_recon, x_ba1, x_ba2
+
+        return outputs
 
     def dis_update(self, x_a, x_b, hyperparameters):
         self.dis_opt.zero_grad()
@@ -159,10 +183,10 @@ class MUNIT_Trainer(nn.Module):
         x_ba = self.gen_a.decode(c_b, s_a)
         x_ab = self.gen_b.decode(c_a, s_b)
         # D loss
-        self.loss_dis_a = self.dis_a.calc_dis_loss(x_ba.detach(), x_a)
-        self.loss_dis_b = self.dis_b.calc_dis_loss(x_ab.detach(), x_b)
-        self.loss_dis_total = hyperparameters['gan_w'] * self.loss_dis_a + hyperparameters['gan_w'] * self.loss_dis_b
-        self.loss_dis_total.backward()
+        self.loss['D/A'] = self.dis_a.calc_dis_loss(x_ba.detach(), x_a)
+        self.loss['D/B'] = self.dis_b.calc_dis_loss(x_ab.detach(), x_b)
+        self.loss['D/total'] = hyperparameters['gan_w'] * self.loss['D/A'] + hyperparameters['gan_w'] * self.loss['D/B']
+        self.loss['D/total'].backward()
         self.dis_opt.step()
 
     def update_learning_rate(self):

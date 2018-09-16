@@ -15,10 +15,10 @@ import torch.backends.cudnn as cudnn
 import torch
 import os
 import sys
-import tensorboardX
 import shutil
 import time
 from logger import create_logger
+import tensorboard_logger
 
 parser = OptionParser()
 parser.add_option('--config', type=str, help="net configuration")
@@ -30,41 +30,36 @@ parser.add_option("--model_path", type=str)
 def main(argv):
     (opts, args) = parser.parse_args(argv)
     cudnn.benchmark = True
-    model_name = os.path.splitext(os.path.basename(opts.config))[0]
 
     # Load experiment setting
     config = get_config(opts.config)
     max_iter = config['max_iter']
-    display_size = config['display_size']
 
     # Setup logger and output folders
-    output_folder = os.path.join(config['output_root'], time.strftime("%Y%m%d-%H%M%S"))
-    output_subfolders = prepare_logging_folders(output_folder)
-    logger = create_logger(os.path.join(output_folder, 'train.log'))
-    shutil.copy(opts.config, os.path.join(output_folder, 'config.yaml')) # copy config file to output folder
-    train_writer = tensorboardX.SummaryWriter(output_subfolders['logs'])
+    output_subfolders = prepare_logging_folders(config['output_root'], config['experiment_name'])
+    logger = create_logger(os.path.join(output_subfolders['logs'], 'train_log.log'))
+    shutil.copy(opts.config, os.path.join(output_subfolders['logs'], 'config.yaml')) # copy config file to output folder
+
+    tb_logger = tensorboard_logger.Logger(output_subfolders['logs'])
 
     logger.info('============ Initialized logger ============')
     logger.info('Config File: {}'.format(opts.config))
-    logger.info('Logging folder: {}'.format(output_folder))
 
     # Setup model and data loader
     trainer = MUNIT_Trainer(config, opts)
     trainer.cuda()
-    train_loader_a, train_loader_b, test_loader_a, test_loader_b = get_all_data_loaders(config)
-    test_display_images_a = Variable(torch.stack([test_loader_a.dataset[i] for i in range(display_size)]).cuda())
-    test_display_images_b = Variable(torch.stack([test_loader_b.dataset[i] for i in range(display_size)]).cuda())
-    train_display_images_a = Variable(torch.stack([train_loader_a.dataset[i] for i in range(display_size)]).cuda())
-    train_display_images_b = Variable(torch.stack([train_loader_b.dataset[i] for i in range(display_size)]).cuda())
-
+    loaders = get_all_data_loaders(config)
+    val_display_images = next(iter(loaders['val']))
 
     # Start training
     iterations = trainer.resume(opts.model_path, hyperparameters=config) if opts.resume else 0
 
-
     while True:
-        for it, (images_a, images_b) in enumerate(zip(train_loader_a, train_loader_b)):
+        for it, images in enumerate(loaders['train']):
             trainer.update_learning_rate()
+            images_a = images['A']
+            images_b = images['B']
+
             images_a, images_b = Variable(images_a.cuda()), Variable(images_b.cuda())
 
             # Main training code
@@ -73,28 +68,32 @@ def main(argv):
 
             # Dump training stats in log file
             if (iterations + 1) % config['log_iter'] == 0:
-                write_loss(iterations, trainer, train_writer)
+                for tag, value in trainer.loss.items():
+                    tb_logger.scalar_summary(tag, value, iterations)
+
+                val_output_imgs = trainer.sample(
+                    Variable(val_display_images['A'].cuda()),
+                    Variable(val_display_images['B'].cuda()))
+
+                tb_imgs = []
+                for imgs in val_output_imgs.values():
+                    tb_imgs.append(torch.cat(torch.unbind(imgs, 0), dim=2))
+
+                tb_logger.image_summary(list(val_output_imgs.keys()), tb_imgs, iterations)
 
             if (iterations + 1) % config['print_iter'] == 0:
                 logger.info("Iteration: {:08}/{:08} Discriminator Loss: {:.4f} Generator Loss: {:.4f}".format(
-                    iterations + 1, max_iter, getattr(trainer, 'loss_dis_total').item(),
-                    getattr(trainer, 'loss_gen_total').item()))
-
+                    iterations + 1, max_iter, trainer.loss['D/total'], trainer.loss['G/total']))
 
             # Write images
             if (iterations + 1) % config['image_save_iter'] == 0:
-                # Test set images
-                image_outputs = trainer.sample(test_display_images_a, test_display_images_b)
-                write_images(image_outputs[0:4], display_size, '%s/gen_a2b_test_%08d.jpg' % (output_subfolders['images'], iterations + 1))
-                write_images(image_outputs[4:8], display_size, '%s/gen_b2a_test_%08d.jpg' % (output_subfolders['images'], iterations + 1))
+                val_output_imgs = trainer.sample(
+                    Variable(val_display_images['A'].cuda()),
+                    Variable(val_display_images['B'].cuda()))
 
-                # Train set images
-                image_outputs = trainer.sample(train_display_images_a, train_display_images_b)
-                write_images(image_outputs[0:4], display_size, '%s/gen_a2b_train_%08d.jpg' % (output_subfolders['images'], iterations + 1))
-                write_images(image_outputs[4:8], display_size, '%s/gen_b2a_train_%08d.jpg' % (output_subfolders['images'], iterations + 1))
-
-                # HTML
-                write_html(output_folder + "/index.html", iterations + 1, config['image_save_iter'], 'images')
+                for key, imgs in val_output_imgs.items():
+                    key = key.replace('/', '_')
+                    write_images(imgs, config['display_size'], '{}/{}_{:08}.jpg'.format(output_subfolders['images'], key, iterations+1))
 
             # Save network weights
             if (iterations + 1) % config['snapshot_save_iter'] == 0:
