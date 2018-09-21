@@ -50,6 +50,7 @@ def main(argv):
     trainer.cuda()
     loaders = get_all_data_loaders(config)
     val_display_images = next(iter(loaders['val']))
+    logger.info('Test images: {}'.format(val_display_images['A_paths']))
 
     # Start training
     iterations = trainer.resume(opts.model_path, hyperparameters=config) if opts.resume else 0
@@ -86,14 +87,16 @@ def main(argv):
                     iterations + 1, max_iter, trainer.loss['D/total'], trainer.loss['G/total']))
 
             # Write images
-            if (iterations + 1) % config['image_save_iter'] == 0:
-                val_output_imgs = trainer.sample(
-                    Variable(val_display_images['A'].cuda()),
-                    Variable(val_display_images['B'].cuda()))
-
-                for key, imgs in val_output_imgs.items():
-                    key = key.replace('/', '_')
-                    write_images(imgs, config['display_size'], '{}/{}_{:08}.jpg'.format(output_subfolders['images'], key, iterations+1))
+            # if (iterations + 1) % config['image_save_iter'] == 0:
+            #     val_output_imgs = trainer.sample(
+            #         Variable(val_display_images['A'].cuda()),
+            #         Variable(val_display_images['B'].cuda()))
+            #
+            #     for key, imgs in val_output_imgs.items():
+            #         key = key.replace('/', '_')
+            #         write_images(imgs, config['display_size'], '{}/{}_{:08}.jpg'.format(output_subfolders['images'], key, iterations+1))
+            #
+            #     logger.info('Saved images to: {}'.format(output_subfolders['images']))
 
             # Save network weights
             if (iterations + 1) % config['snapshot_save_iter'] == 0:

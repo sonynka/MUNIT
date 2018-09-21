@@ -102,8 +102,8 @@ def eformat(f, prec):
     return "%se%d"%(mantissa, int(exp))
 
 
-def write_images(image_outputs, display_image_num, file_name):
-    image_tensor = torch.cat(torch.unbind(image_outputs, 0), dim=2)
+def write_images(image_outputs, file_name):
+    image_tensor = torch.cat(torch.unbind(imgs, 0), dim=2)
     image_grid = vutils.make_grid(image_tensor.data, nrow=display_image_num, padding=0, normalize=True)
     vutils.save_image(image_grid, file_name, nrow=1)
 

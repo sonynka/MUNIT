@@ -191,9 +191,19 @@ class MUNIT_Trainer(nn.Module):
 
     def update_learning_rate(self):
         if self.dis_scheduler is not None:
+            old_lr = self.dis_opt.param_groups[0]['lr']
+
             self.dis_scheduler.step()
+
+            new_lr = self.dis_opt.param_groups[0]['lr']
+            if old_lr != new_lr:
+                logger.info('Updated D learning rate: {}'.format(new_lr))
         if self.gen_scheduler is not None:
+            old_lr = self.gen_opt.param_groups[0]['lr']
             self.gen_scheduler.step()
+            new_lr = self.gen_opt.param_groups[0]['lr']
+            if old_lr != new_lr:
+                logger.info('Updated G learning rate: {}'.format(new_lr))
 
     def resume(self, checkpoint_dir, hyperparameters):
         # Load generators
